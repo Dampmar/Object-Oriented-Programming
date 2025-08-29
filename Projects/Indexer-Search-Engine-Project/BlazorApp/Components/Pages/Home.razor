@@ -1,0 +1,270 @@
+﻿@page "/"
+@rendermode InteractiveServer
+
+@using Classes
+@using iTextSharp.text.pdf;
+@using iTextSharp.text.pdf.parser;
+@using System.Text;
+
+<PageTitle>Search Documents</PageTitle>
+
+<style>
+    body {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        margin: 0;
+        padding: 0;
+        background-color: #f4f4f4;
+    }
+
+    h1, h2 {
+        color: #333;
+        text-align: center;
+        margin-top: 20px;
+        font-weight: 300;
+    }
+
+    .container {
+        max-width: 800px;
+        margin: 0 auto;
+        background-color: #fff;
+        padding: 20px;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        border-radius: 10px;
+        margin-top: 30px;
+    }
+
+    label {
+        font-size: 16px;
+        color: #555;
+    }
+
+    select, input {
+        width: 100%;
+        padding: 10px;
+        margin: 10px 0;
+        border-radius: 5px;
+        border: 1px solid #ccc;
+        font-size: 14px;
+    }
+
+    .btn {
+        background-color: #4285f4;
+        color: #fff;
+        padding: 10px 20px;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 16px;
+        transition: background-color 0.3s;
+    }
+
+    .btn:hover {
+        background-color: #357ae8;
+    }
+
+    .search-results {
+        margin-top: 20px;
+    }
+
+    ul {
+        list-style-type: none;
+        padding: 0;
+    }
+
+    ul li {
+        margin: 10px 0;
+    }
+
+    ul li a {
+        color: #4285f4;
+        text-decoration: none;
+        font-size: 16px;
+    }
+
+    ul li a:hover {
+        text-decoration: underline;
+    }
+
+    .no-results {
+        color: #e74c3c;
+        text-align: center;
+        font-size: 18px;
+    }
+
+    .document-content {
+        margin-top: 20px;
+        padding: 15px;
+        background-color: #f9f9f9;
+        border: 1px solid #ddd;
+        border-radius: 5px;
+        white-space: pre-wrap;
+    }
+</style>
+
+<div class="container">
+    <h1>Search Documents</h1>
+
+    <div>
+        <h2>Select Options</h2>
+        <label for="vectorizer">Choose Vectorization Method:</label>
+        <select @bind="selectedVectorizer">
+            <option value="">Select Method</option>
+            <option value="tfidf">TFIDF</option>
+            <option value="vectorizer">Vectorizer</option>
+        </select>
+    </div>
+
+    <div>
+        <label for="distance">Choose Distance Metric:</label>
+        <select @bind="selectedDistance">
+            <option value="">Select Metric</option>
+            <option value="cosine">Cosine</option>
+            <option value="euclidean">Euclidean</option>
+        </select>
+    </div>
+
+    <div>
+        <input @bind="query" placeholder="Enter your search query" />
+        <button class="btn" @onclick="Search">Search</button>
+    </div>
+
+    @if (results != null && results.Any())
+    {
+        <div class="search-results">
+            <h2>Search Results:</h2>
+            <ul>
+                @foreach (var result in results)
+                {
+                    <li>
+                        <a href="#" @onclick="() => OpenDocument(result)">@result</a>
+                    </li>
+                }
+            </ul>
+        </div>
+    }
+    else if (results != null)
+    {
+        <p class="no-results">No results found.</p>
+    }
+
+    @if (!string.IsNullOrEmpty(selectedDocumentContent))
+    {
+        <h2>Document Content:</h2>
+        <div class="document-content">
+            @selectedDocumentContent
+        </div>
+    }
+</div>
+
+@code {
+    private string query;
+    private List<string> results;
+    private Indexer indexer;
+    private string selectedDocumentContent;
+    
+    private string selectedVectorizer; 
+    private string selectedDistance; 
+
+    protected override async Task OnInitializedAsync()
+    {
+        indexer = new Indexer();
+        string folderPath = "/Users/jennifervicentesvalle/Desktop/TTU/Object-Oriented Programming/IndexerSearchEngineProj/Folders"; // Reemplazar con la ruta correcta
+        LoadIndex(); 
+    }
+
+    private void LoadIndex()
+    {
+        string indexPath = "/Users/jennifervicentesvalle/Desktop/TTU/Object-Oriented Programming/IndexerSearchEngineProj/Folders/index.json"; // Reemplazar con la ruta correcta
+        indexer.LoadIndex(indexPath);
+        Console.WriteLine($"Loaded {indexer.Documents.Count} documents from index.");
+    }
+
+    private string ReadPdfContent(string filePath)
+    {
+        StringBuilder text = new StringBuilder();
+        using (PdfReader reader = new PdfReader(filePath))
+        {
+            for (int i = 1; i <= reader.NumberOfPages; i++)
+            {
+                string pageText = PdfTextExtractor.GetTextFromPage(reader, i);
+                text.Append(pageText);
+            }
+        }
+        return text.ToString();
+    }
+
+    private async Task Search()
+    {
+        Console.WriteLine($"Query received: {query}");
+
+        if (string.IsNullOrWhiteSpace(selectedVectorizer) || string.IsNullOrWhiteSpace(selectedDistance))
+        {
+            selectedDocumentContent = "Please select both a vectorization method and a distance metric.";
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(query))
+        {
+            Console.WriteLine($"Searching for: {query}");
+            try
+            {
+                string folderPath = "/Users/jennifervicentesvalle/Desktop/TTU/Object-Oriented Programming/IndexerSearchEngineProj/Folders"; // Reemplazar con la ruta correcta
+                await Task.Run(() => indexer.IndexFolder(folderPath, selectedVectorizer, selectedDistance));
+
+                results = indexer.Search(query, 10, selectedDistance); 
+                Console.WriteLine($"Found {results.Count} results.");
+
+                if (results.Count == 0)
+                {
+                    selectedDocumentContent = "No documents";
+                }
+
+                foreach (var result in results)
+                {
+                    Console.WriteLine($"Result: {result}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error during search: {ex.Message}");
+                selectedDocumentContent = "No documents."; 
+            }
+        }
+        else
+        {
+            selectedDocumentContent = "No documents."; 
+        }
+    }
+
+    private void OpenDocument(string documentName)
+    {
+        try
+        {
+            string documentPath = $"/Users/jennifervicentesvalle/Desktop/TTU/Object-Oriented Programming/IndexerSearchEngineProj/Folders/IndexerTesting/{documentName}";
+            Console.WriteLine($"Attempting to open document at path: {documentPath}");
+
+            if (!System.IO.File.Exists(documentPath))
+            {
+                throw new FileNotFoundException($"File not found: {documentPath}");
+            }
+
+            string extension = System.IO.Path.GetExtension(documentPath).ToLower();
+
+            if (extension == ".pdf")
+            {
+                selectedDocumentContent = ReadPdfContent(documentPath);
+            }
+            else
+            {
+                selectedDocumentContent = System.IO.File.ReadAllText(documentPath);
+            }
+
+            Console.WriteLine($"Opened document: {documentName}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error opening document: {ex.Message}");
+            selectedDocumentContent = "No documents."; 
+        }
+    }
+}
